@@ -5,6 +5,7 @@
 // @description  Busca músicas no YouTube e exibe em um popup.
 // @author       Felipe Prado
 // @match        https://app.camkrolik.com.br/*
+// @match        https://is.xivup.com/*
 // @connect      googleapis.com
 // @grant        GM_xmlhttpRequest
 // @run-at       document-idle
@@ -16,7 +17,8 @@
     // =================================================================================
     // CONFIGURAÇÃO ESSENCIAL
     // =================================================================================
-    const YOUTUBE_API_KEY = 'AIzaSyAcl9uhYqUJ2H1aU_CzF1fDXWA7A9fenrI';
+    //const YOUTUBE_API_KEY = 'AIzaSyAcl9uhYqUJ2H1aU_CzF1fDXWA7A9fenrI'; Chave API do youtube felipegreck2015@gmail.com
+    const YOUTUBE_API_KEY = 'AIzaSyA47h6TUyA6tTDZrAEldUQgROnWMcee9Ww'; //Chave API do youtube handplays2015@gmail.com
     //TODO
     //Barra de pesquisa continuar aparecendo após clicar no video
     //Ser capaz de selecionar playlists
@@ -24,9 +26,16 @@
     // Visualizar a letra das músicas caso esteja disponível.
     // =================================================================================  
 
+    let ultimoTermo = '';
+    let ultimoTipo = 'video';
+    let ultimosResultados = null;
 
     function adicionarBotaoCustomizado() {
-        const seletorDoLocal = 'div.jss24.flex.flex-col';
+        // Seletor para o site original
+        // const seletorDoLocal = 'div.jss24.flex.flex-col';
+        
+        // Seletor para o novo site - ADAPTE ESTE SELETOR
+        const seletorDoLocal = 'div.col.my-1.text-nowrap'; // Mude para o seletor do novo site
         const elementoPai = document.querySelector(seletorDoLocal);
 
         if (!elementoPai || document.getElementById('meu-botao-youtube')) {
@@ -73,6 +82,7 @@
                 flex-direction: column;
                 overflow-y: auto;
                 border-left: 1px solid #eee;
+                transition: top 0.3s ease;
             `;
             document.body.appendChild(painel);
         }
@@ -92,7 +102,7 @@
         function renderPainel(termoBusca = '', tipoBusca = 'video', resultados = null, erro = null) {
             painel.innerHTML = `
                 <div style="background:#ff0000;color:#fff;padding:16px 0;text-align:center;font-size:1.2em;font-weight:bold;letter-spacing:1px;">
-                    YouTube Busca
+                    YouTube
                     <button id="fechar-painel-youtube" style="float:right;margin-right:16px;background:none;border:none;color:#fff;font-size:1.2em;cursor:pointer;">&times;</button>
                 </div>
                 <form class="yt-search-bar" id="yt-form" style="display:flex;justify-content:center;align-items:center;margin:18px 0 12px 0;">
@@ -146,6 +156,9 @@
             painel.querySelector('#fechar-painel-youtube').onclick = () => {
                 painel.style.display = 'none';
                 playerContainer.style.visibility = 'hidden';
+                // Restaura a posição original do painel
+                painel.style.top = '0';
+                painel.style.height = '100vh';
                 document.body.classList.remove('yt-aba-aberta');
             };
 
@@ -172,12 +185,21 @@
                         <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
                     `;
                     playerContainer.style.display = 'flex';
+                    
+                    // Ajusta a posição do painel para ficar abaixo do player
+                    painel.style.top = '180px';
+                    painel.style.height = 'calc(100vh - 180px)';
+                    
+                    // Mantém o painel lateral aberto para permitir novas pesquisas
+                    // O painel continua visível, apenas o player aparece no topo
                 };
             });
         }
 
         // Função para buscar no YouTube
         function buscarYoutube(termo, tipo) {
+            ultimoTermo = termo;
+            ultimoTipo = tipo;
             renderPainel(termo, tipo); // Mostra carregando
             const tipoApi = tipo === 'playlist' ? 'playlist' : 'video';
             const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(termo)}&key=${YOUTUBE_API_KEY}&maxResults=12&type=${tipoApi}`;
@@ -190,7 +212,8 @@
                         renderPainel(termo, tipo, null, `Erro: ${data.error.message}`);
                         return;
                     }
-                    renderPainel(termo, tipo, data.items || []);
+                    ultimosResultados = data.items || [];
+                    renderPainel(termo, tipo, ultimosResultados);
                 },
                 onerror: function() {
                     renderPainel(termo, tipo, null, 'Erro de conexão com a API do YouTube.');
@@ -203,15 +226,21 @@
             if (painel.style.display === 'flex') {
                 painel.style.display = 'none';
                 playerContainer.style.visibility = 'hidden';
+                // Restaura a posição original do painel
+                painel.style.top = '0';
+                painel.style.height = '100vh';
                 document.body.classList.remove('yt-aba-aberta');
             } else {
-                const seletorNomeContato = 'header span[title]';
-                const elementoNome = document.querySelector(seletorNomeContato);
-                const termoBusca = elementoNome ? elementoNome.innerText : 'Músicas';
                 painel.style.display = 'flex';
                 playerContainer.style.visibility = 'visible';
                 document.body.classList.add('yt-aba-aberta');
-                buscarYoutube(termoBusca, 'video');
+                painel.style.top = '0';
+                painel.style.height = '100vh';
+                renderPainel(ultimoTermo, ultimoTipo, ultimosResultados);
+                if (playerContainer.style.display === 'flex') {
+                    painel.style.top = '180px';
+                    painel.style.height = 'calc(100vh - 180px)';
+                }
             }
         });
 
@@ -226,10 +255,17 @@
     // CSS para responsividade da aba lateral
     const style = document.createElement('style');
     style.innerHTML = `
+    /* CSS para o site original */
     body.yt-aba-aberta .jss341 {
         right: 350px !important;
         transition: right 0.2s;
     }
+    
+    /* CSS para o novo site - ADAPTE SE NECESSÁRIO */
+    /* body.yt-aba-aberta .seu-novo-seletor {
+        right: 350px !important;
+        transition: right 0.2s;
+    } */
     `;
     document.head.appendChild(style);
 
