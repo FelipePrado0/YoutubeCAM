@@ -44,6 +44,7 @@
     let painel = null;
     let historicoBuscas = [];
     let favoritos = [];
+    let playerAtivo = false;
 
     // =================================================================================
     // FUNÇÕES UTILITÁRIAS
@@ -59,22 +60,29 @@
         }
     }
 
-    function salvarHistorico(termo, tipo) {
-        if (!termo.trim()) return;
+    // Função removida - não salvamos mais buscas, apenas vídeos assistidos
+
+    function salvarVideoAssistido(videoId, titulo, canal, thumbnail, tipo = 'video') {
+        const video = {
+            id: videoId,
+            titulo: titulo,
+            canal: canal,
+            thumbnail: thumbnail,
+            tipo: tipo,
+            timestamp: Date.now()
+        };
         
-        const busca = { termo: termo.trim(), tipo, timestamp: Date.now() };
-        
-        // Remove se já existe
+        // Remove se já existe (para não duplicar)
         historicoBuscas = historicoBuscas.filter(item => 
-            item.termo !== busca.termo || item.tipo !== busca.tipo
+            !(item.id === videoId && item.tipo === tipo)
         );
         
         // Adiciona no início
-        historicoBuscas.unshift(busca);
+        historicoBuscas.unshift(video);
         
-        // Mantém apenas os últimos 10
-        if (historicoBuscas.length > 10) {
-            historicoBuscas = historicoBuscas.slice(0, 10);
+        // Mantém apenas os últimos 20 vídeos assistidos
+        if (historicoBuscas.length > 20) {
+            historicoBuscas = historicoBuscas.slice(0, 20);
         }
         
         localStorage.setItem('yt_historico_buscas', JSON.stringify(historicoBuscas));
@@ -105,6 +113,16 @@
 
     function isFavorito(id, tipo) {
         return favoritos.some(f => f.id === id && f.tipo === tipo);
+    }
+
+    function limparHistorico() {
+        historicoBuscas = [];
+        localStorage.removeItem('yt_historico_buscas');
+    }
+
+    function limparFavoritos() {
+        favoritos = [];
+        localStorage.removeItem('yt_favoritos');
     }
     
     function extrairIdPlaylist(url) {
@@ -184,7 +202,10 @@
     function ocultarPlayerComAnimacao() {
         playerContainer.style.opacity = '0';
         playerContainer.style.transform = 'translateY(-20px)';
-        setTimeout(() => playerContainer.style.display = 'none', 300);
+        setTimeout(() => {
+            playerContainer.style.display = 'none';
+            playerAtivo = false;
+        }, 300);
     }
 
     function mostrarSpinner() {
@@ -212,8 +233,7 @@
                 width: ${LARGURA_ABA_YOUTUBE}px; height: ${ALTURA_PLAYER_FIXO}px;
                 background: #000;
                 display: none;
-                justify-content: center;
-                align-items: center;
+                flex-direction: column;
                 box-shadow: -2px 0 12px #0002;
                 transition: opacity 0.3s ease, transform 0.3s ease;
                 opacity: 0;
@@ -372,36 +392,58 @@
     }
 
     function renderizarHistorico() {
+        const header = `
+            <div class="yt-tab-header">
+                <span>Vídeos Assistidos (${historicoBuscas.length})</span>
+                ${historicoBuscas.length > 0 ? '<button class="yt-clear-btn" id="limpar-historico" title="Limpar histórico">Limpar</button>' : ''}
+            </div>
+        `;
+
         if (historicoBuscas.length === 0) {
-            return '<div class="yt-dark-nada">Nenhuma busca no histórico.</div>';
+            return header + '<div class="yt-dark-nada">Nenhum vídeo assistido.</div>';
         }
 
-        return historicoBuscas.map(busca => {
-            const data = new Date(busca.timestamp);
+        return header + historicoBuscas.map(item => {
+            const data = new Date(item.timestamp);
             const dataFormatada = data.toLocaleDateString('pt-BR') + ' ' + data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             
             return `
-                <div class="yt-dark-card yt-historico-item" data-termo="${busca.termo}" data-tipo="${busca.tipo}">
+                <div class="yt-dark-card yt-historico-item" data-videoid="${item.id}" data-tipo="${item.tipo}">
+                    <img class="yt-dark-thumb" src="${item.thumbnail}" alt="${item.titulo}">
                     <div class="yt-dark-info">
-                        <div class="yt-dark-title">${busca.termo}</div>
-                        <div class="yt-dark-channel">${busca.tipo === 'video' ? 'Vídeo' : 'Playlist'} • ${dataFormatada}</div>
+                        <div class="yt-dark-title">${item.titulo}</div>
+                        <div class="yt-dark-channel">${item.canal} • ${dataFormatada}</div>
                     </div>
-                    <button class="yt-refazer-btn" title="Refazer busca">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-                        </svg>
-                    </button>
+                    <div class="yt-historico-actions">
+                        <button class="yt-play-btn" title="Reproduzir novamente">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </button>
+                        <button class="yt-fav-btn" data-id="${item.id}" data-tipo="${item.tipo}" title="${isFavorito(item.id, item.tipo) ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="${isFavorito(item.id, item.tipo) ? 'currentColor' : 'none'}" stroke="currentColor">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             `;
         }).join('');
     }
 
     function renderizarFavoritos() {
+        const header = `
+            <div class="yt-tab-header">
+                <span>Favoritos (${favoritos.length})</span>
+                ${favoritos.length > 0 ? '<button class="yt-clear-btn" id="limpar-favoritos" title="Limpar favoritos">Limpar</button>' : ''}
+            </div>
+        `;
+
         if (favoritos.length === 0) {
-            return '<div class="yt-dark-nada">Nenhum favorito salvo.</div>';
+            return header + '<div class="yt-dark-nada">Nenhum favorito salvo.</div>';
         }
 
-        return favoritos.map(fav => {
+        return header + favoritos.map(fav => {
             return `
                 <div class="yt-dark-card yt-favorito-item" data-id="${fav.id}" data-tipo="${fav.tipo}">
                     <img class="yt-dark-thumb" src="${fav.thumbnail}" alt="">
@@ -518,7 +560,18 @@
                 
                 if (videoId && isVideo !== null) {
                     if (isVideo) {
-                        reproduzirVideo(videoId);
+                        // Busca as informações do vídeo nos resultados
+                        const resultados = ultimosResultados || [];
+                        const item = resultados.find(r => r.id.videoId === videoId);
+                        
+                        if (item) {
+                            const titulo = item.snippet.title;
+                            const canal = item.snippet.channelTitle;
+                            const thumbnail = item.snippet.thumbnails.high.url;
+                            reproduzirVideo(videoId, titulo, canal, thumbnail);
+                        } else {
+                            reproduzirVideo(videoId);
+                        }
                     } else {
                         carregarPlaylist(videoId);
                     }
@@ -557,27 +610,43 @@
             item.onclick = function(e) {
                 if (e.target.closest('button')) return;
                 
-                const termo = this.getAttribute('data-termo');
+                const videoId = this.getAttribute('data-videoid');
                 const tipo = this.getAttribute('data-tipo');
                 
-                if (termo && tipo) {
-                    processarBusca(termo, tipo, linkText);
-                    renderPainel(termo, tipo, null, null, 'busca');
+                if (videoId) {
+                    const titulo = this.querySelector('.yt-dark-title').textContent;
+                    const canal = this.querySelector('.yt-dark-channel').textContent.split(' • ')[0];
+                    const thumbnail = this.querySelector('.yt-dark-thumb')?.src;
+                    
+                    if (tipo === 'video') {
+                        reproduzirVideo(videoId, titulo, canal, thumbnail);
+                    } else {
+                        carregarPlaylist(videoId);
+                    }
                 }
             };
         });
 
-        // Eventos dos botões refazer busca
-        painel.querySelectorAll('.yt-refazer-btn').forEach(btn => {
+        // Eventos dos botões refazer busca - removido pois não salvamos mais buscas
+
+        // Eventos dos botões de reproduzir no histórico
+        painel.querySelectorAll('.yt-play-btn').forEach(btn => {
             btn.onclick = function(e) {
                 e.stopPropagation();
                 const item = this.closest('.yt-historico-item');
-                const termo = item.getAttribute('data-termo');
+                const videoId = item.getAttribute('data-videoid');
                 const tipo = item.getAttribute('data-tipo');
                 
-                if (termo && tipo) {
-                    processarBusca(termo, tipo, linkText);
-                    renderPainel(termo, tipo, null, null, 'busca');
+                if (videoId) {
+                    const titulo = item.querySelector('.yt-dark-title').textContent;
+                    const canal = item.querySelector('.yt-dark-channel').textContent.split(' • ')[0];
+                    const thumbnail = item.querySelector('.yt-dark-thumb')?.src;
+                    
+                    if (tipo === 'video') {
+                        reproduzirVideo(videoId, titulo, canal, thumbnail);
+                    } else {
+                        carregarPlaylist(videoId);
+                    }
                 }
             };
         });
@@ -592,7 +661,10 @@
                 
                 if (id && tipo) {
                     if (tipo === 'video') {
-                        reproduzirVideo(id);
+                        const titulo = this.querySelector('.yt-dark-title').textContent;
+                        const canal = this.querySelector('.yt-dark-channel').textContent.split(' • ')[0];
+                        const thumbnail = this.querySelector('.yt-dark-thumb')?.src;
+                        reproduzirVideo(id, titulo, canal, thumbnail);
                     } else {
                         carregarPlaylist(id);
                     }
@@ -611,6 +683,28 @@
                 renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, 'favoritos');
             };
         });
+
+        // Evento para limpar histórico
+        const btnLimparHistorico = painel.querySelector('#limpar-historico');
+        if (btnLimparHistorico) {
+            btnLimparHistorico.onclick = function() {
+                if (confirm('Tem certeza que deseja limpar todo o histórico de vídeos assistidos?')) {
+                    limparHistorico();
+                    renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, 'historico');
+                }
+            };
+        }
+
+        // Evento para limpar favoritos
+        const btnLimparFavoritos = painel.querySelector('#limpar-favoritos');
+        if (btnLimparFavoritos) {
+            btnLimparFavoritos.onclick = function() {
+                if (confirm('Tem certeza que deseja limpar todos os favoritos?')) {
+                    limparFavoritos();
+                    renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, 'favoritos');
+                }
+            };
+        }
     }
 
     function configurarEventosPlaylist(itens, playlistId) {
@@ -619,6 +713,16 @@
         painel.querySelectorAll('.yt-dark-playlist-item').forEach(div => {
             div.onclick = function() {
                 const videoId = this.getAttribute('data-videoid');
+                
+                // Salva o vídeo no histórico
+                const titulo = this.querySelector('.yt-dark-playlist-item-title').textContent;
+                const canal = this.querySelector('.yt-dark-playlist-item-channel').textContent;
+                const thumbnail = this.querySelector('.yt-dark-playlist-thumb')?.src;
+                
+                if (titulo && canal && thumbnail) {
+                    salvarVideoAssistido(videoId, titulo, canal, thumbnail, 'video');
+                }
+                
                 renderPainelPlaylist(itens, playlistId, videoId);
             };
         });
@@ -635,14 +739,35 @@
     function abrirPainel() {
         mostrarPainelComAnimacao();
         document.body.classList.add('yt-aba-aberta');
-        painel.style.top = '0';
-        painel.style.height = '100vh';
+        
+        if (playerAtivo) {
+            // Se há player ativo, mostra o player e ajusta o painel
+            playerContainer.style.display = 'flex';
+            setTimeout(() => {
+                playerContainer.style.opacity = '1';
+                playerContainer.style.transform = 'translateY(0)';
+            }, 10);
+            painel.style.top = '180px';
+            painel.style.height = 'calc(100vh - 180px)';
+        } else {
+            // Se não há player, usa o layout normal
+            painel.style.top = '0';
+            painel.style.height = '100vh';
+        }
+        
         renderPainel(ultimoTermo, ultimoTipo, ultimosResultados);
     }
 
     function fecharPainel() {
         ocultarPainelComAnimacao();
-        ocultarPlayerComAnimacao();
+        
+        // Oculta o player mas mantém o áudio
+        if (playerAtivo) {
+            playerContainer.style.opacity = '0';
+            playerContainer.style.transform = 'translateY(-20px)';
+            setTimeout(() => playerContainer.style.display = 'none', 300);
+        }
+        
         painel.style.top = '0';
         painel.style.height = '100vh';
         document.body.classList.remove('yt-aba-aberta');
@@ -681,19 +806,50 @@
         if (videoId) {
             linkText.textContent = '⏳ Carregando vídeo...';
             linkText.style.color = '#FFC107';
-            reproduzirVideo(videoId);
+            
+            // Busca informações do vídeo via API para salvar no histórico
+            const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+            
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: apiUrl,
+                onload: function(response) {
+                    const data = JSON.parse(response.responseText);
+                    if (data.items && data.items.length > 0) {
+                        const item = data.items[0];
+                        const titulo = item.snippet.title;
+                        const canal = item.snippet.channelTitle;
+                        const thumbnail = item.snippet.thumbnails.high.url;
+                        reproduzirVideo(videoId, titulo, canal, thumbnail);
+                    } else {
+                        reproduzirVideo(videoId);
+                    }
+                },
+                onerror: function() {
+                    reproduzirVideo(videoId);
+                }
+            });
             return;
         }
     }
 
-    function reproduzirVideo(videoId) {
+    function reproduzirVideo(videoId, titulo = null, canal = null, thumbnail = null) {
         const embedUrl = criarUrlEmbed(videoId);
         playerContainer.innerHTML = `
-            <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+            <div class="yt-player-content">
+                <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+            </div>
         `;
+        
         mostrarPlayerComAnimacao();
+        playerAtivo = true;
         painel.style.top = '180px';
         painel.style.height = 'calc(100vh - 180px)';
+        
+        // Salva o vídeo no histórico se temos as informações
+        if (titulo && canal && thumbnail) {
+            salvarVideoAssistido(videoId, titulo, canal, thumbnail, 'video');
+        }
     }
 
     function carregarPlaylist(playlistId) {
@@ -706,6 +862,7 @@
             const itensValidos = itens.filter(item => item.snippet && item.snippet.resourceId && item.snippet.resourceId.videoId);
             renderPainelPlaylist(itensValidos, playlistId);
             ocultarPlayerComAnimacao();
+            playerAtivo = false;
             painel.style.top = '0';
             painel.style.height = '100vh';
         });
@@ -718,7 +875,6 @@
     function buscarYoutube(termo, tipo) {
         ultimoTermo = termo;
         ultimoTipo = tipo;
-        salvarHistorico(termo, tipo);
         renderPainel(termo, tipo);
         mostrarSpinner();
         
@@ -1129,7 +1285,7 @@
             }
 
             /* Botões de ação */
-            .yt-refazer-btn, .yt-remove-fav-btn {
+            .yt-remove-fav-btn, .yt-play-btn {
                 background: none;
                 border: none;
                 color: #666;
@@ -1139,13 +1295,48 @@
                 transition: all 0.2s;
                 margin-left: 8px;
             }
-            .yt-refazer-btn:hover {
-                color: #2196F3;
-                background: rgba(33,150,243,0.1);
-            }
             .yt-remove-fav-btn:hover {
                 color: #ff4444;
                 background: rgba(255,68,68,0.1);
+            }
+            .yt-play-btn:hover {
+                color: #4CAF50;
+                background: rgba(76,175,80,0.1);
+            }
+
+            /* Ações do histórico */
+            .yt-historico-actions {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+
+            /* Headers das abas */
+            .yt-tab-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 12px 16px;
+                background: #202020;
+                border-bottom: 1px solid #333;
+                font-size: 0.9em;
+                color: #aaa;
+            }
+            .yt-tab-header span {
+                font-weight: 500;
+            }
+            .yt-clear-btn {
+                background: #ff4444;
+                border: none;
+                color: #fff;
+                padding: 4px 8px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 0.8em;
+                transition: background 0.2s;
+            }
+            .yt-clear-btn:hover {
+                background: #d32f2f;
             }
 
             /* Itens do histórico e favoritos */
@@ -1154,6 +1345,14 @@
             }
             .yt-historico-item:hover, .yt-favorito-item:hover {
                 background: #333 !important;
+            }
+
+            /* Conteúdo do Player */
+            .yt-player-content {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
         `;
         document.head.appendChild(styleDark);
