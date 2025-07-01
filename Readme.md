@@ -22,7 +22,7 @@ Escolha uma das opções:
 
 ### Passo a Passo:
 1. Acesse `https://app.camkrolik.com.br/`
-2. Aguarde 3 segundos - aparecerá um botão do YouTube na barra superior
+2. Aguarde 3 segundos - aparecerá um botão do YouTube na barra lateral
 3. Clique no botão para abrir o painel lateral
 4. Digite o que quer buscar (música, artista, etc.)
 5. Selecione o tipo: Vídeo, Playlist ou Live
