@@ -30,7 +30,7 @@
     //const YOUTUBE_API_KEY = 'AIzaSyAcl9uhYqUJ2H1aU_CzF1fDXWA7A9fenrI'; //Chave API do youtube felipegreck2015@gmail.com
     const YOUTUBE_API_KEY = 'AIzaSyA47h6TUyA6tTDZrAEldUQgROnWMcee9Ww'; //Chave API do youtube handplays2015@gmail.com
     const BARRA_LATERAL_LARGURA = 60;
-    const LARGURA_ABA_YOUTUBE = 360;
+    const LARGURA_ABA_YOUTUBE = 352;
     const ALTURA_PLAYER_FIXO = 197;
     const ALTURA_PLAYER_PLAYLIST = 197;
 
@@ -45,6 +45,7 @@
     let historicoBuscas = [];
     let favoritos = [];
     let playerAtivo = false;
+    let playerVisivel = false;
     
     // Cache para thumbnails e dados
     let thumbnailCache = new Map();
@@ -565,6 +566,28 @@
                 </div>
                 <button id="fechar-painel-youtube" class="yt-dark-close">&times;</button>
             </div>
+            
+            <!-- Barra de pesquisa para playlists -->
+            <form class="yt-dark-search" id="yt-form-playlist">
+                <div class="yt-dark-search-box">
+                    <input type="text" id="yt-termo-playlist" placeholder="Pesquisar" required>
+                    <select id="yt-tipo-playlist">
+                        <option value="video">Vídeo</option>
+                        <option value="playlist">Playlist</option>
+                        <option value="broadcast">Live</option>
+                    </select>
+                    <button type="submit" class="yt-dark-search-btn" title="Buscar">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <circle cx="9" cy="9" r="7" stroke="#fff" stroke-width="2"/>
+                            <line x1="14.2929" y1="14.7071" x2="18" y2="18.4142" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+            <div id="yt-link-indicator-playlist" class="yt-link-indicator" style="display: none;">
+                <span id="yt-link-text-playlist">Detectando tipo de link...</span>
+            </div>
+            
             <div class="yt-dark-playlist-list">
                 ${itens.map(item => `
                     <div class="yt-dark-playlist-item${item.snippet.resourceId.videoId === currentVideoId ? ' yt-dark-playlist-item-active' : ''}" data-videoid="${item.snippet.resourceId.videoId}">
@@ -804,6 +827,54 @@
     function configurarEventosPlaylist(itens, playlistId) {
         painel.querySelector('#fechar-painel-youtube').onclick = fecharPainel;
 
+        // Eventos da barra de pesquisa da playlist
+        const inputTermo = painel.querySelector('#yt-termo-playlist');
+        const linkIndicator = painel.querySelector('#yt-link-indicator-playlist');
+        const linkText = painel.querySelector('#yt-link-text-playlist');
+        const selectTipo = painel.querySelector('#yt-tipo-playlist');
+
+        // Evento de input para detectar links
+        if (inputTermo) {
+            inputTermo.addEventListener('input', function() {
+                const valor = this.value.trim();
+                
+                if (valor.includes('youtube.com') || valor.includes('youtu.be')) {
+                    const playlistId = extrairIdPlaylist(valor);
+                    const videoId = extrairIdVideo(valor);
+                    
+                    if (playlistId) {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '🔗 Link de Playlist detectado';
+                        linkText.style.color = '#4CAF50';
+                        selectTipo.value = 'playlist';
+                    } else if (videoId) {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '🔗 Link de Vídeo detectado';
+                        linkText.style.color = '#2196F3';
+                        selectTipo.value = 'video';
+                    } else {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '⚠️ Link do YouTube inválido';
+                        linkText.style.color = '#FF9800';
+                    }
+                } else {
+                    linkIndicator.style.display = 'none';
+                }
+            });
+
+            // Evento de submit do formulário
+            painel.querySelector('#yt-form-playlist').onsubmit = function(e) {
+                e.preventDefault();
+                const termo = inputTermo.value.trim();
+                const tipo = selectTipo.value;
+                
+                if (!termo) return;
+                
+                processarBusca(termo, tipo, linkText);
+            };
+        }
+
+        // Eventos dos itens da playlist
         painel.querySelectorAll('.yt-dark-playlist-item').forEach(div => {
             div.onclick = function() {
                 const videoId = this.getAttribute('data-videoid');
@@ -835,7 +906,8 @@
         document.body.classList.add('yt-aba-aberta');
         
         if (playerAtivo) {
-            // Se há player ativo, mostra o player e ajusta o painel
+            // Se há player ativo, sempre mostra o player e ajusta o painel
+            playerVisivel = true; // Força o player a ficar visível
             playerContainer.style.display = 'flex';
             setTimeout(() => {
                 playerContainer.style.opacity = '1';
@@ -849,22 +921,32 @@
             painel.style.height = '100vh';
         }
         
+        // Verifica se há playlist tocando e mantém o estado
+        const playlistPlayer = painel.querySelector('.yt-dark-playlist-player iframe');
+        if (playlistPlayer && playlistPlayer.src !== 'about:blank') {
+            // Se há playlist tocando, não renderiza o painel principal
+            return;
+        }
+        
         renderPainel(ultimoTermo, ultimoTipo, ultimosResultados);
     }
 
     function fecharPainel() {
+        // Oculta o painel e o player visual, mas mantém o áudio
         ocultarPainelComAnimacao();
-        
-        // Oculta o player mas mantém o áudio
-        if (playerAtivo) {
-            playerContainer.style.opacity = '0';
-            playerContainer.style.transform = 'translateY(-20px)';
-            setTimeout(() => playerContainer.style.display = 'none', 300);
-        }
-        
         painel.style.top = '0';
         painel.style.height = '100vh';
         document.body.classList.remove('yt-aba-aberta');
+        
+        // Oculta o player visual mas mantém o áudio
+        if (playerAtivo) {
+            playerContainer.style.opacity = '0';
+            playerContainer.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                playerContainer.style.display = 'none';
+            }, 300);
+            playerVisivel = false;
+        }
         
         // Limpa o campo de busca e indicador
         const inputTermo = painel.querySelector('#yt-termo');
@@ -874,6 +956,26 @@
             if (linkIndicator) linkIndicator.style.display = 'none';
         }
     }
+
+    function pararTodasReproducoes() {
+        // Para qualquer reprodução ativa
+        if (playerAtivo) {
+            playerContainer.innerHTML = '';
+            ocultarPlayerComAnimacao();
+            playerAtivo = false;
+            playerVisivel = false;
+            painel.style.top = '0';
+            painel.style.height = '100vh';
+        }
+        
+        // Para qualquer playlist tocando
+        const playlistPlayer = painel.querySelector('.yt-dark-playlist-player iframe');
+        if (playlistPlayer) {
+            playlistPlayer.src = 'about:blank';
+        }
+    }
+
+
 
     // =================================================================================
     // PROCESSAMENTO DE BUSCA
@@ -947,17 +1049,33 @@
     }
 
     function reproduzirVideo(videoId, titulo = null, canal = null, thumbnail = null) {
+        // Para qualquer playlist que esteja tocando
+        const playlistPlayer = painel.querySelector('.yt-dark-playlist-player iframe');
+        if (playlistPlayer) {
+            playlistPlayer.src = 'about:blank';
+        }
+        
         const embedUrl = criarUrlEmbed(videoId);
         playerContainer.innerHTML = `
             <div class="yt-player-content">
                 <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
             </div>
+            <button id="parar-player" class="yt-stop-btn" title="Parar reprodução">⏹️</button>
         `;
         
         mostrarPlayerComAnimacao();
         playerAtivo = true;
+        playerVisivel = true;
         painel.style.top = '180px';
         painel.style.height = 'calc(100vh - 180px)';
+        
+        // Adiciona evento para o botão de parar
+        setTimeout(() => {
+            const btnParar = playerContainer.querySelector('#parar-player');
+            if (btnParar) {
+                btnParar.onclick = pararTodasReproducoes;
+            }
+        }, 100);
         
         // Salva o vídeo no histórico se temos as informações
         if (titulo && canal && thumbnail) {
@@ -966,6 +1084,15 @@
     }
 
     function carregarPlaylist(playlistId) {
+        // Para qualquer vídeo que esteja tocando no player fixo
+        if (playerAtivo) {
+            playerContainer.innerHTML = '';
+            ocultarPlayerComAnimacao();
+            playerAtivo = false;
+            painel.style.top = '0';
+            painel.style.height = '100vh';
+        }
+        
         mostrarSpinner();
         buscarItensDaPlaylist(playlistId, function(itens, erro) {
             if (erro) {
@@ -974,10 +1101,6 @@
             }
             const itensValidos = itens.filter(item => item.snippet && item.snippet.resourceId && item.snippet.resourceId.videoId);
             renderPainelPlaylist(itensValidos, playlistId);
-            ocultarPlayerComAnimacao();
-            playerAtivo = false;
-            painel.style.top = '0';
-            painel.style.height = '100vh';
         });
     }
 
@@ -1490,6 +1613,32 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
+            }
+
+            /* Botão de parar */
+            .yt-stop-btn {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(0,0,0,0.7);
+                border: none;
+                color: #fff;
+                padding: 6px 8px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: all 0.2s;
+                z-index: 10;
+            }
+            .yt-stop-btn:hover {
+                background: rgba(255,0,0,0.8);
+                transform: scale(1.1);
+            }
+
+            /* Barra de pesquisa em playlists - usa o mesmo estilo do painel principal */
+            .yt-dark-playlist-header + .yt-dark-search {
+                margin: 12px 16px;
+                padding: 0;
             }
 
             /* Indicador de Live */
