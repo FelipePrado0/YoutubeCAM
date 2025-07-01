@@ -768,6 +768,39 @@
             };
         });
 
+        // Eventos dos botões de favorito no histórico
+        painel.querySelectorAll('.yt-historico-item .yt-fav-btn').forEach(btn => {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                const id = this.getAttribute('data-id');
+                const tipo = this.getAttribute('data-tipo');
+                
+                if (isFavorito(id, tipo)) {
+                    removerFavorito(id, tipo);
+                } else {
+                    // Cria um objeto item com as informações do histórico
+                    const item = this.closest('.yt-historico-item');
+                    const titulo = item.querySelector('.yt-dark-title').textContent;
+                    const canal = item.querySelector('.yt-dark-channel').textContent.split(' • ')[0];
+                    const thumbnail = item.querySelector('.yt-dark-thumb')?.src;
+                    
+                    const itemObj = {
+                        id: { videoId: id, playlistId: id },
+                        snippet: {
+                            title: titulo,
+                            channelTitle: canal,
+                            thumbnails: { high: { url: thumbnail } }
+                        }
+                    };
+                    
+                    adicionarFavorito(itemObj, tipo);
+                }
+                
+                // Re-renderiza o histórico para atualizar os botões
+                renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, 'historico');
+            };
+        });
+
         // Eventos dos favoritos
         painel.querySelectorAll('.yt-favorito-item').forEach(item => {
             item.onclick = function(e) {
@@ -977,6 +1010,8 @@
 
 
 
+
+
     // =================================================================================
     // PROCESSAMENTO DE BUSCA
     // =================================================================================
@@ -1060,7 +1095,6 @@
             <div class="yt-player-content">
                 <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
             </div>
-            <button id="parar-player" class="yt-stop-btn" title="Parar reprodução">⏹️</button>
         `;
         
         mostrarPlayerComAnimacao();
@@ -1069,13 +1103,7 @@
         painel.style.top = '180px';
         painel.style.height = 'calc(100vh - 180px)';
         
-        // Adiciona evento para o botão de parar
-        setTimeout(() => {
-            const btnParar = playerContainer.querySelector('#parar-player');
-            if (btnParar) {
-                btnParar.onclick = pararTodasReproducoes;
-            }
-        }, 100);
+
         
         // Salva o vídeo no histórico se temos as informações
         if (titulo && canal && thumbnail) {
@@ -1615,25 +1643,7 @@
                 justify-content: center;
             }
 
-            /* Botão de parar */
-            .yt-stop-btn {
-                position: absolute;
-                top: 8px;
-                right: 8px;
-                background: rgba(0,0,0,0.7);
-                border: none;
-                color: #fff;
-                padding: 6px 8px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-                transition: all 0.2s;
-                z-index: 10;
-            }
-            .yt-stop-btn:hover {
-                background: rgba(255,0,0,0.8);
-                transform: scale(1.1);
-            }
+
 
             /* Barra de pesquisa em playlists - usa o mesmo estilo do painel principal */
             .yt-dark-playlist-header + .yt-dark-search {
@@ -1680,4 +1690,4 @@
     adicionarCSS();
     setTimeout(adicionarBotaoCustomizado, 3000);
 
-})();
+})(); 
