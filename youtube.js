@@ -19,12 +19,14 @@
     // =================================================================================
     //const YOUTUBE_API_KEY = 'AIzaSyAcl9uhYqUJ2H1aU_CzF1fDXWA7A9fenrI'; Chave API do youtube felipegreck2015@gmail.com
     const YOUTUBE_API_KEY = 'AIzaSyA47h6TUyA6tTDZrAEldUQgROnWMcee9Ww'; //Chave API do youtube handplays2015@gmail.com
-    //TODO
+    //TODO:
     //Barra de pesquisa continuar aparecendo após clicar no video (ok)
     //Ser capaz de selecionar playlists(ok)
     //Ordem da playlist, todas que irão tocar a seguir, ser possível ver as musicas anteriores e também as próximas (agora implementado)
     // Visualizar a letra das músicas caso esteja disponível.
     // =================================================================================  
+    // Known issues:
+    //Não funciona com playlists dinamicas geradas pelo youtube (descobrir o porque disso)	
 
     let ultimoTermo = '';
     let ultimoTipo = 'video';
@@ -60,6 +62,9 @@
                 justify-content: center;
                 align-items: center;
                 box-shadow: -2px 0 12px #0002;
+                transition: opacity 0.3s ease, transform 0.3s ease;
+                opacity: 0;
+                transform: translateY(-20px);
             `;
             document.body.appendChild(playerContainer);
         }
@@ -82,7 +87,9 @@
                 flex-direction: column;
                 overflow-y: auto;
                 border-left: 1px solid #eee;
-                transition: top 0.3s ease;
+                transition: top 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
+                opacity: 0;
+                transform: translateX(30px);
             `;
             document.body.appendChild(painel);
         }
@@ -98,6 +105,88 @@
         meuBotao.title = 'Buscar músicas no YouTube';
         meuBotao.innerHTML = `<span class="MuiIconButton-label"><img src="https://toppng.com/uploads/preview/umbrella-corp-logo-115629074748jwup5drlq.png" style="width: 35px; height: 35px; border-radius: 6px;" alt="Logo YouTube"></span>`;
 
+        // Função para extrair ID de playlist de URLs do YouTube
+        function extrairIdPlaylist(url) {
+            const patterns = [
+                /(?:youtube\.com\/playlist\?list=|youtube\.com\/watch\?.*list=)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/playlist\?list=)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/watch\?.*&list=)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/watch\?list=)([a-zA-Z0-9_-]+)/
+            ];
+            
+            for (let pattern of patterns) {
+                const match = url.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+            return null;
+        }
+
+        // Função para extrair ID de vídeo de URLs do YouTube
+        function extrairIdVideo(url) {
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]+)/,
+                /(?:youtu\.be\/)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/watch\?.*&v=)([a-zA-Z0-9_-]+)/,
+                /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]+)(?:&.*)?/
+            ];
+            
+            for (let pattern of patterns) {
+                const match = url.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+            return null;
+        }
+
+        // Funções auxiliares para animações
+        function mostrarPainelComAnimacao() {
+            painel.style.display = 'flex';
+            setTimeout(() => {
+                painel.style.opacity = '1';
+                painel.style.transform = 'translateX(0)';
+            }, 10);
+        }
+
+        function ocultarPainelComAnimacao() {
+            painel.style.opacity = '0';
+            painel.style.transform = 'translateX(30px)';
+            setTimeout(() => {
+                painel.style.display = 'none';
+            }, 300);
+        }
+
+        function mostrarPlayerComAnimacao() {
+            playerContainer.style.display = 'flex';
+            setTimeout(() => {
+                playerContainer.style.opacity = '1';
+                playerContainer.style.transform = 'translateY(0)';
+            }, 10);
+        }
+
+        function ocultarPlayerComAnimacao() {
+            playerContainer.style.opacity = '0';
+            playerContainer.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                playerContainer.style.display = 'none';
+            }, 300);
+        }
+
+        function mostrarSpinner() {
+            const resultsDiv = painel.querySelector('.yt-dark-results');
+            if (resultsDiv) {
+                resultsDiv.innerHTML = `
+                    <div style="display: flex; justify-content: center; align-items: center; height: 100px;">
+                        <div style="width: 40px; height: 40px; border: 3px solid #333; border-top: 3px solid #ff0000; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    </div>
+                `;
+            }
+        }
+
         // Função para renderizar o painel lateral
         function renderPainel(termoBusca = '', tipoBusca = 'video', resultados = null, erro = null) {
             painel.innerHTML = `
@@ -107,7 +196,7 @@
                 </div>
                 <form class="yt-dark-search" id="yt-form">
                     <div class="yt-dark-search-box">
-                        <input type="text" id="yt-termo" placeholder="Pesquisar" value="${termoBusca.replace(/"/g, '&quot;')}" required>
+                        <input type="text" id="yt-termo" placeholder="Pesquisar ou colar link do YouTube" value="${termoBusca.replace(/"/g, '&quot;')}" required>
                         <select id="yt-tipo">
                             <option value="video" ${tipoBusca === 'video' ? 'selected' : ''}>Vídeo</option>
                             <option value="playlist" ${tipoBusca === 'playlist' ? 'selected' : ''}>Playlist</option>
@@ -120,6 +209,9 @@
                         </button>
                     </div>
                 </form>
+                <div id="yt-link-indicator" class="yt-link-indicator" style="display: none;">
+                    <span id="yt-link-text">Detectando tipo de link...</span>
+                </div>
                 ${erro ? `<div class="yt-dark-erro">${erro}</div>` : ''}
                 <div class="yt-dark-results">
                     ${
@@ -158,18 +250,104 @@
             `;
 
             painel.querySelector('#fechar-painel-youtube').onclick = () => {
-                painel.style.display = 'none';
-                playerContainer.style.visibility = 'hidden';
+                ocultarPainelComAnimacao();
+                ocultarPlayerComAnimacao();
                 painel.style.top = '0';
                 painel.style.height = '100vh';
                 document.body.classList.remove('yt-aba-aberta');
+                // Limpa o campo de busca e indicador
+                if (inputTermo) {
+                    inputTermo.value = '';
+                    linkIndicator.style.display = 'none';
+                }
             };
+
+            // Adiciona listener para detectar mudanças no input
+            const inputTermo = painel.querySelector('#yt-termo');
+            const linkIndicator = painel.querySelector('#yt-link-indicator');
+            const linkText = painel.querySelector('#yt-link-text');
+            const selectTipo = painel.querySelector('#yt-tipo');
+            
+            inputTermo.addEventListener('input', function() {
+                const valor = this.value.trim();
+                
+                if (valor.includes('youtube.com') || valor.includes('youtu.be')) {
+                    const playlistId = extrairIdPlaylist(valor);
+                    const videoId = extrairIdVideo(valor);
+                    
+                    if (playlistId) {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '🔗 Link de Playlist detectado';
+                        linkText.style.color = '#4CAF50';
+                        selectTipo.value = 'playlist';
+                    } else if (videoId) {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '🔗 Link de Vídeo detectado';
+                        linkText.style.color = '#2196F3';
+                        selectTipo.value = 'video';
+                    } else {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '⚠️ Link do YouTube inválido';
+                        linkText.style.color = '#FF9800';
+                    }
+                } else {
+                    linkIndicator.style.display = 'none';
+                }
+            });
 
             painel.querySelector('#yt-form').onsubmit = function(e) {
                 e.preventDefault();
                 const termo = painel.querySelector('#yt-termo').value.trim();
                 const tipo = painel.querySelector('#yt-tipo').value;
-                if (termo) buscarYoutube(termo, tipo);
+                
+                if (!termo) return;
+                
+                // Verifica se é um link do YouTube
+                if (termo.includes('youtube.com') || termo.includes('youtu.be')) {
+                    // Tenta extrair ID de playlist primeiro
+                    const playlistId = extrairIdPlaylist(termo);
+                    if (playlistId) {
+                        // É uma playlist
+                        linkText.textContent = '⏳ Carregando playlist...';
+                        linkText.style.color = '#FFC107';
+                        
+                        buscarItensDaPlaylist(playlistId, function(itens, erro) {
+                            if (erro) {
+                                renderPainel('', 'playlist', null, erro);
+                                return;
+                            }
+                            // Filtra apenas vídeos válidos
+                            itens = itens.filter(item => item.snippet && item.snippet.resourceId && item.snippet.resourceId.videoId);
+                            // Substitui TODO o painel pela playlist (player + lista)
+                            renderPainelPlaylist(itens, playlistId);
+                            // Esconde o player fixo fora do painel
+                            ocultarPlayerComAnimacao();
+                            painel.style.top = '0';
+                            painel.style.height = '100vh';
+                        });
+                        return;
+                    }
+                    
+                    // Tenta extrair ID de vídeo
+                    const videoId = extrairIdVideo(termo);
+                    if (videoId) {
+                        // É um vídeo individual
+                        linkText.textContent = '⏳ Carregando vídeo...';
+                        linkText.style.color = '#FFC107';
+                        
+                        let embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1&modestbranding=1&rel=0&showinfo=0`;
+                        playerContainer.innerHTML = `
+                            <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+                        `;
+                        mostrarPlayerComAnimacao();
+                        painel.style.top = '180px';
+                        painel.style.height = 'calc(100vh - 180px)';
+                        return;
+                    }
+                }
+                
+                // Se não for um link válido, faz busca normal
+                buscarYoutube(termo, tipo);
             };
 
             painel.querySelectorAll('.yt-dark-card').forEach(card => {
@@ -178,11 +356,11 @@
                     const isVideo = this.getAttribute('data-isvideo') === 'true';
                     if (isVideo) {
                         // Exibe vídeo individual no player fixo
-                        let embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                        let embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1&modestbranding=1&rel=0&showinfo=0`;
                         playerContainer.innerHTML = `
                             <iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
                         `;
-                        playerContainer.style.display = 'flex';
+                        mostrarPlayerComAnimacao();
                         painel.style.top = '180px';
                         painel.style.height = 'calc(100vh - 180px)';
                     } else {
@@ -197,7 +375,7 @@
                             // Substitui TODO o painel pela playlist (player + lista)
                             renderPainelPlaylist(itens, videoId);
                             // Esconde o player fixo fora do painel
-                            playerContainer.style.display = 'none';
+                            ocultarPlayerComAnimacao();
                             painel.style.top = '0';
                             painel.style.height = '100vh';
                         });
@@ -233,7 +411,7 @@
             painel.innerHTML = `
                 <div class="yt-dark-playlist-header">
                     <div class="yt-dark-playlist-player">
-                        <iframe width="100%" height="100%" src="https://www.youtube.com/embed/${currentVideoId}?autoplay=1&list=${playlistId}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+                        <iframe width="100%" height="100%" src="https://www.youtube.com/embed/${currentVideoId}?autoplay=1&list=${playlistId}&controls=1&modestbranding=1&rel=0&showinfo=0" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
                     </div>
                     <button id="fechar-painel-youtube" class="yt-dark-close">&times;</button>
                 </div>
@@ -251,8 +429,8 @@
             `;
 
             painel.querySelector('#fechar-painel-youtube').onclick = () => {
-                painel.style.display = 'none';
-                playerContainer.style.visibility = 'hidden';
+                ocultarPainelComAnimacao();
+                ocultarPlayerComAnimacao();
                 painel.style.top = '0';
                 painel.style.height = '100vh';
                 document.body.classList.remove('yt-aba-aberta');
@@ -270,7 +448,8 @@
         function buscarYoutube(termo, tipo) {
             ultimoTermo = termo;
             ultimoTipo = tipo;
-            renderPainel(termo, tipo); // Mostra carregando
+            renderPainel(termo, tipo); // Renderiza o painel primeiro
+            mostrarSpinner(); // Mostra spinner de carregamento
             const tipoApi = tipo === 'playlist' ? 'playlist' : 'video';
             const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(termo)}&key=${YOUTUBE_API_KEY}&maxResults=12&type=${tipoApi}`;
             GM_xmlhttpRequest({
@@ -293,23 +472,18 @@
 
         // Alternar painel ao clicar no botão
         meuBotao.addEventListener('click', () => {
-            if (painel.style.display === 'flex') {
-                painel.style.display = 'none';
-                playerContainer.style.visibility = 'hidden';
+            if (painel.style.display === 'flex' && painel.style.opacity === '1') {
+                ocultarPainelComAnimacao();
+                ocultarPlayerComAnimacao();
                 painel.style.top = '0';
                 painel.style.height = '100vh';
                 document.body.classList.remove('yt-aba-aberta');
             } else {
-                painel.style.display = 'flex';
-                playerContainer.style.visibility = 'visible';
+                mostrarPainelComAnimacao();
                 document.body.classList.add('yt-aba-aberta');
                 painel.style.top = '0';
                 painel.style.height = '100vh';
                 renderPainel(ultimoTermo, ultimoTipo, ultimosResultados);
-                if (playerContainer.style.display === 'flex') {
-                    painel.style.top = '180px';
-                    painel.style.height = 'calc(100vh - 180px)';
-                }
             }
         });
 
@@ -692,7 +866,7 @@
     }
     .yt-dark-playlist-player {
         width: 100%;
-        height: 180px;
+        height: 200px;
         border-radius: 12px 12px 0 0;
         overflow: hidden;
         background: #000;
@@ -792,6 +966,27 @@
     }
     .yt-dark-search-box input {
         text-align: center;
+    }
+    
+    /* Indicador de link */
+    .yt-link-indicator {
+        background: rgba(255,255,255,0.05);
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin: 8px 16px;
+        text-align: center;
+        font-size: 0.9em;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .yt-link-indicator span {
+        font-weight: 500;
+    }
+
+    /* Animação do spinner */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
     `;
     document.head.appendChild(styleDark);
