@@ -45,6 +45,11 @@
     let historicoBuscas = [];
     let favoritos = [];
     let playerAtivo = false;
+    
+    // Cache para thumbnails e dados
+    let thumbnailCache = new Map();
+    let searchCache = new Map();
+    let videoInfoCache = new Map();
 
     // =================================================================================
     // FUNÇÕES UTILITÁRIAS
@@ -172,6 +177,84 @@
         
         return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
     }
+
+    // =================================================================================
+    // CACHE INTELIGENTE
+    // =================================================================================
+    
+    // Sistema de cache para otimizar performance e reduzir requisições à API
+    function getTimeAgo(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+        
+        if (minutes < 1) return 'Agora mesmo';
+        if (minutes < 60) return `${minutes} min atrás`;
+        if (hours < 24) return `${hours}h atrás`;
+        return `${days} dias atrás`;
+    }
+
+    // Cache de Thumbnails
+    function getCachedThumbnail(videoId) {
+        return thumbnailCache.get(videoId);
+    }
+
+    // Salva thumbnail no cache (máximo 100 itens)
+    function setCachedThumbnail(videoId, thumbnail) {
+        thumbnailCache.set(videoId, thumbnail);
+        
+        // Limpeza automática
+        if (thumbnailCache.size > 100) {
+            const firstKey = thumbnailCache.keys().next().value;
+            thumbnailCache.delete(firstKey);
+        }
+    }
+
+    // Cache de Buscas
+    function getCachedSearch(termo, tipo) {
+        const key = `${termo}_${tipo}`; // Chave única: "música_video" ou "rock_playlist"
+        const cached = searchCache.get(key);
+        
+        // Verifica se não expirou (5 minutos)
+        if (cached && Date.now() - cached.timestamp < 300000) {
+            return cached.data;
+        }
+        return null;
+    }
+
+    // Salva busca no cache (máximo 50 itens, expira em 5 min)
+    function setCachedSearch(termo, tipo, data) {
+        const key = `${termo}_${tipo}`;
+        searchCache.set(key, { 
+            data, 
+            timestamp: Date.now() 
+        });
+        
+        // Limpeza automática
+        if (searchCache.size > 50) {
+            const firstKey = searchCache.keys().next().value;
+            searchCache.delete(firstKey);
+        }
+    }
+
+    // Cache de Informações de Vídeo
+    function getCachedVideoInfo(videoId) {
+        return videoInfoCache.get(videoId);
+    }
+
+    // Salva informações do vídeo no cache (máximo 200 itens)
+    function setCachedVideoInfo(videoId, info) {
+        videoInfoCache.set(videoId, info);
+        
+        // Limpeza automática
+        if (videoInfoCache.size > 200) {
+            const firstKey = videoInfoCache.keys().next().value;
+            videoInfoCache.delete(firstKey);
+        }
+    }
+
 
     // =================================================================================
     // ANIMAÇÕES
@@ -321,10 +404,11 @@
             <div class="yt-tab-content" id="tab-busca" style="display: ${abaAtiva === 'busca' ? 'block' : 'none'}">
                 <form class="yt-dark-search" id="yt-form">
                     <div class="yt-dark-search-box">
-                        <input type="text" id="yt-termo" placeholder="Pesquisar ou colar link do YouTube" value="${termoBusca.replace(/"/g, '&quot;')}" required>
+                        <input type="text" id="yt-termo" placeholder="Pesquisar" value="${termoBusca.replace(/"/g, '&quot;')}" required>
                         <select id="yt-tipo">
                             <option value="video" ${tipoBusca === 'video' ? 'selected' : ''}>Vídeo</option>
                             <option value="playlist" ${tipoBusca === 'playlist' ? 'selected' : ''}>Playlist</option>
+                            <option value="broadcast" ${tipoBusca === 'broadcast' ? 'selected' : ''}>Live</option>
                         </select>
                         <button type="submit" class="yt-dark-search-btn" title="Buscar">
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -367,16 +451,26 @@
         }
 
         return resultados.map(item => {
-            const isVideo = tipoBusca === 'video';
+            const isVideo = tipoBusca === 'video' || tipoBusca === 'broadcast';
             const videoId = isVideo ? item.id.videoId : item.id.playlistId;
             const thumb = item.snippet.thumbnails.high.url;
             const title = item.snippet.title;
             const channel = item.snippet.channelTitle;
             const isFav = isFavorito(videoId, tipoBusca);
+            
+            // Cache da thumbnail
+            setCachedThumbnail(videoId, thumb);
+            
+            // Indicador especial para livestreams
+            const isLive = tipoBusca === 'broadcast';
+            const liveIndicator = isLive ? '<div class="yt-live-indicator">🔴 AO VIVO</div>' : '';
 
             return `
                 <div class="yt-dark-card" data-videoid="${videoId}" data-isvideo="${isVideo}">
-                    <img class="yt-dark-thumb" src="${thumb}" alt="">
+                    <div class="yt-thumb-wrapper">
+                        <img class="yt-dark-thumb" src="${thumb}" alt="">
+                        ${liveIndicator}
+                    </div>
                     <div class="yt-dark-info">
                         <div class="yt-dark-title">${title}</div>
                         <div class="yt-dark-channel">${channel}</div>
@@ -804,8 +898,23 @@
         
         const videoId = extrairIdVideo(termo);
         if (videoId) {
-            linkText.textContent = '⏳ Carregando vídeo...';
-            linkText.style.color = '#FFC107';
+            // Verifica se é um link de live (contém /live/ ou /watch?v=)
+            const isLiveLink = termo.includes('/live/') || termo.includes('&live=1');
+            
+            if (isLiveLink) {
+                linkText.textContent = '🔴 Link de Live detectado';
+                linkText.style.color = '#ff0000';
+            } else {
+                linkText.textContent = '⏳ Carregando vídeo...';
+                linkText.style.color = '#FFC107';
+            }
+            
+            // Verifica cache primeiro
+            const cachedInfo = getCachedVideoInfo(videoId);
+            if (cachedInfo) {
+                reproduzirVideo(videoId, cachedInfo.titulo, cachedInfo.canal, cachedInfo.thumbnail);
+                return;
+            }
             
             // Busca informações do vídeo via API para salvar no histórico
             const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YOUTUBE_API_KEY}`;
@@ -820,6 +929,10 @@
                         const titulo = item.snippet.title;
                         const canal = item.snippet.channelTitle;
                         const thumbnail = item.snippet.thumbnails.high.url;
+                        
+                        // Salva no cache
+                        setCachedVideoInfo(videoId, { titulo, canal, thumbnail });
+                        
                         reproduzirVideo(videoId, titulo, canal, thumbnail);
                     } else {
                         reproduzirVideo(videoId);
@@ -875,11 +988,31 @@
     function buscarYoutube(termo, tipo) {
         ultimoTermo = termo;
         ultimoTipo = tipo;
+        
+        // Verifica cache primeiro
+        const cachedResults = getCachedSearch(termo, tipo);
+        if (cachedResults) {
+            ultimosResultados = cachedResults;
+            renderPainel(termo, tipo, ultimosResultados);
+            return;
+        }
+        
         renderPainel(termo, tipo);
         mostrarSpinner();
         
-        const tipoApi = tipo === 'playlist' ? 'playlist' : 'video';
-        const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(termo)}&key=${YOUTUBE_API_KEY}&maxResults=12&type=${tipoApi}`;
+        let tipoApi = 'video';
+        if (tipo === 'playlist') {
+            tipoApi = 'playlist';
+        } else if (tipo === 'broadcast') {
+            tipoApi = 'video';
+        }
+        
+        let apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(termo)}&key=${YOUTUBE_API_KEY}&maxResults=12&type=${tipoApi}`;
+        
+        // Para livestreams, adiciona filtro de evento ao vivo
+        if (tipo === 'broadcast') {
+            apiUrl += '&eventType=live';
+        }
         
         GM_xmlhttpRequest({
             method: 'GET',
@@ -891,6 +1024,10 @@
                     return;
                 }
                 ultimosResultados = data.items || [];
+                
+                // Salva no cache
+                setCachedSearch(termo, tipo, ultimosResultados);
+                
                 renderPainel(termo, tipo, ultimosResultados);
             },
             onerror: function() {
@@ -1353,6 +1490,34 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
+            }
+
+            /* Indicador de Live */
+            .yt-thumb-wrapper {
+                position: relative;
+                display: inline-block;
+            }
+
+            .yt-live-indicator {
+                position: absolute;
+                top: 4px;
+                left: 4px;
+                background: linear-gradient(45deg, #ff0000, #ff4444);
+                color: #fff;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 0.7em;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                animation: pulse 2s infinite;
+            }
+
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.7; }
+                100% { opacity: 1; }
             }
         `;
         document.head.appendChild(styleDark);
