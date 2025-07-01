@@ -1,24 +1,23 @@
 // ==UserScript==
-// @name         Buscar Músicas no YouTube (Krolik)
+// @name         Buscar Músicas e Playlists no YouTube (Krolik)
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Busca músicas no YouTube e exibe em um popup.
+// @version      1.0
+// @description  Busca músicas no YouTube e exibe em uma barra lateral.
 // @author       Felipe Prado
 // @match        https://app.camkrolik.com.br/*
 // @match        https://is.xivup.com/*
 // @connect      googleapis.com
-// @grant        GM_xmlhttpRequest
+// @grant        GM_xmlhttpRequest 
 // @run-at       document-idle
 // ==/UserScript==
 
 (function() {
     'use strict';
-
-    // =================================================================================
-    // CONFIGURAÇÃO ESSENCIAL
-    // =================================================================================
+    // CHAVES DE API
     //const YOUTUBE_API_KEY = 'AIzaSyAcl9uhYqUJ2H1aU_CzF1fDXWA7A9fenrI'; Chave API do youtube felipegreck2015@gmail.com
     const YOUTUBE_API_KEY = 'AIzaSyA47h6TUyA6tTDZrAEldUQgROnWMcee9Ww'; //Chave API do youtube handplays2015@gmail.com
+    // =================================================================================
+
     //TODO:
     //Barra de pesquisa continuar aparecendo após clicar no video (ok)
     //Ser capaz de selecionar playlists(ok)
@@ -36,7 +35,7 @@
         // Seletor para o site original
         // const seletorDoLocal = 'div.jss24.flex.flex-col';
         
-        // Seletor para o novo site - ADAPTE ESTE SELETOR
+        // Seletor para o novo site de testes
         const seletorDoLocal = 'div.col.my-1.text-nowrap'; // Mude para o seletor do novo site
         const elementoPai = document.querySelector(seletorDoLocal);
 
