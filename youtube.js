@@ -11,17 +11,28 @@
 // @run-at       document-idle
 // ==/UserScript==
 
+    //TODO:
+    //Barra de pesquisa continuar aparecendo após clicar no video (ok)
+    //Ser capaz de selecionar playlists(ok)
+    //Ordem da playlist, todas que irão tocar a seguir, ser possível ver as musicas anteriores e também as próximas (agora implementado)
+    // Visualizar a letra das músicas caso esteja disponível.
+    // =================================================================================  
+
+    // Known issues:
+    //Não funciona com playlists dinamicas geradas pelo youtube (descobrir o porque disso)
+
 (function() {
     'use strict';
 
     // =================================================================================
     // CONFIGURAÇÃO
     // =================================================================================
-    const YOUTUBE_API_KEY = 'AIzaSyA47h6TUyA6tTDZrAEldUQgROnWMcee9Ww';
+    //const YOUTUBE_API_KEY = 'AIzaSyAcl9uhYqUJ2H1aU_CzF1fDXWA7A9fenrI'; //Chave API do youtube felipegreck2015@gmail.com
+    const YOUTUBE_API_KEY = 'AIzaSyA47h6TUyA6tTDZrAEldUQgROnWMcee9Ww'; //Chave API do youtube handplays2015@gmail.com
     const BARRA_LATERAL_LARGURA = 60;
-    const LARGURA_ABA_YOUTUBE = 350;
+    const LARGURA_ABA_YOUTUBE = 360;
     const ALTURA_PLAYER_FIXO = 197;
-    const ALTURA_PLAYER_PLAYLIST = 200;
+    const ALTURA_PLAYER_PLAYLIST = 197;
 
     // =================================================================================
     // VARIÁVEIS GLOBAIS
@@ -31,10 +42,70 @@
     let ultimosResultados = null;
     let playerContainer = null;
     let painel = null;
+    let historicoBuscas = [];
+    let favoritos = [];
 
     // =================================================================================
     // FUNÇÕES UTILITÁRIAS
     // =================================================================================
+    
+    function carregarDadosSalvos() {
+        try {
+            historicoBuscas = JSON.parse(localStorage.getItem('yt_historico_buscas') || '[]');
+            favoritos = JSON.parse(localStorage.getItem('yt_favoritos') || '[]');
+        } catch (e) {
+            historicoBuscas = [];
+            favoritos = [];
+        }
+    }
+
+    function salvarHistorico(termo, tipo) {
+        if (!termo.trim()) return;
+        
+        const busca = { termo: termo.trim(), tipo, timestamp: Date.now() };
+        
+        // Remove se já existe
+        historicoBuscas = historicoBuscas.filter(item => 
+            item.termo !== busca.termo || item.tipo !== busca.tipo
+        );
+        
+        // Adiciona no início
+        historicoBuscas.unshift(busca);
+        
+        // Mantém apenas os últimos 10
+        if (historicoBuscas.length > 10) {
+            historicoBuscas = historicoBuscas.slice(0, 10);
+        }
+        
+        localStorage.setItem('yt_historico_buscas', JSON.stringify(historicoBuscas));
+    }
+
+    function adicionarFavorito(item, tipo) {
+        const favorito = {
+            id: tipo === 'video' ? item.id.videoId : item.id.playlistId,
+            tipo: tipo,
+            titulo: item.snippet.title,
+            canal: item.snippet.channelTitle,
+            thumbnail: item.snippet.thumbnails.high.url,
+            timestamp: Date.now()
+        };
+        
+        // Verifica se já existe
+        const existe = favoritos.find(f => f.id === favorito.id && f.tipo === favorito.tipo);
+        if (!existe) {
+            favoritos.unshift(favorito);
+            localStorage.setItem('yt_favoritos', JSON.stringify(favoritos));
+        }
+    }
+
+    function removerFavorito(id, tipo) {
+        favoritos = favoritos.filter(f => !(f.id === id && f.tipo === tipo));
+        localStorage.setItem('yt_favoritos', JSON.stringify(favoritos));
+    }
+
+    function isFavorito(id, tipo) {
+        return favoritos.some(f => f.id === id && f.tipo === tipo);
+    }
     
     function extrairIdPlaylist(url) {
         const patterns = [
@@ -199,33 +270,69 @@
     // RENDERIZAÇÃO
     // =================================================================================
     
-    function renderPainel(termoBusca = '', tipoBusca = 'video', resultados = null, erro = null) {
+    function renderPainel(termoBusca = '', tipoBusca = 'video', resultados = null, erro = null, abaAtiva = 'busca') {
         painel.innerHTML = `
             <div class="yt-dark-header">
                 <span class="yt-dark-title">YouTube</span>
                 <button id="fechar-painel-youtube" class="yt-dark-close">&times;</button>
             </div>
-            <form class="yt-dark-search" id="yt-form">
-                <div class="yt-dark-search-box">
-                    <input type="text" id="yt-termo" placeholder="Pesquisar ou colar link do YouTube" value="${termoBusca.replace(/"/g, '&quot;')}" required>
-                    <select id="yt-tipo">
-                        <option value="video" ${tipoBusca === 'video' ? 'selected' : ''}>Vídeo</option>
-                        <option value="playlist" ${tipoBusca === 'playlist' ? 'selected' : ''}>Playlist</option>
-                    </select>
-                    <button type="submit" class="yt-dark-search-btn" title="Buscar">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                            <circle cx="9" cy="9" r="7" stroke="#fff" stroke-width="2"/>
-                            <line x1="14.2929" y1="14.7071" x2="18" y2="18.4142" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                    </button>
-                </div>
-            </form>
-            <div id="yt-link-indicator" class="yt-link-indicator" style="display: none;">
-                <span id="yt-link-text">Detectando tipo de link...</span>
+            
+            <div class="yt-dark-tabs">
+                <button class="yt-tab ${abaAtiva === 'busca' ? 'yt-tab-active' : ''}" data-tab="busca">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                    Buscar
+                </button>
+                <button class="yt-tab ${abaAtiva === 'historico' ? 'yt-tab-active' : ''}" data-tab="historico">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+                    </svg>
+                    Histórico
+                </button>
+                <button class="yt-tab ${abaAtiva === 'favoritos' ? 'yt-tab-active' : ''}" data-tab="favoritos">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                    Favoritos
+                </button>
             </div>
-            ${erro ? `<div class="yt-dark-erro">${erro}</div>` : ''}
-            <div class="yt-dark-results">
-                ${renderizarResultados(resultados, tipoBusca)}
+
+            <div class="yt-tab-content" id="tab-busca" style="display: ${abaAtiva === 'busca' ? 'block' : 'none'}">
+                <form class="yt-dark-search" id="yt-form">
+                    <div class="yt-dark-search-box">
+                        <input type="text" id="yt-termo" placeholder="Pesquisar ou colar link do YouTube" value="${termoBusca.replace(/"/g, '&quot;')}" required>
+                        <select id="yt-tipo">
+                            <option value="video" ${tipoBusca === 'video' ? 'selected' : ''}>Vídeo</option>
+                            <option value="playlist" ${tipoBusca === 'playlist' ? 'selected' : ''}>Playlist</option>
+                        </select>
+                        <button type="submit" class="yt-dark-search-btn" title="Buscar">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                <circle cx="9" cy="9" r="7" stroke="#fff" stroke-width="2"/>
+                                <line x1="14.2929" y1="14.7071" x2="18" y2="18.4142" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                </form>
+                <div id="yt-link-indicator" class="yt-link-indicator" style="display: none;">
+                    <span id="yt-link-text">Detectando tipo de link...</span>
+                </div>
+                ${erro ? `<div class="yt-dark-erro">${erro}</div>` : ''}
+                <div class="yt-dark-results">
+                    ${renderizarResultados(resultados, tipoBusca)}
+                </div>
+            </div>
+
+            <div class="yt-tab-content" id="tab-historico" style="display: ${abaAtiva === 'historico' ? 'block' : 'none'}">
+                <div class="yt-dark-results">
+                    ${renderizarHistorico()}
+                </div>
+            </div>
+
+            <div class="yt-tab-content" id="tab-favoritos" style="display: ${abaAtiva === 'favoritos' ? 'block' : 'none'}">
+                <div class="yt-dark-results">
+                    ${renderizarFavoritos()}
+                </div>
             </div>
         `;
 
@@ -245,6 +352,7 @@
             const thumb = item.snippet.thumbnails.high.url;
             const title = item.snippet.title;
             const channel = item.snippet.channelTitle;
+            const isFav = isFavorito(videoId, tipoBusca);
 
             return `
                 <div class="yt-dark-card" data-videoid="${videoId}" data-isvideo="${isVideo}">
@@ -253,6 +361,59 @@
                         <div class="yt-dark-title">${title}</div>
                         <div class="yt-dark-channel">${channel}</div>
                     </div>
+                    <button class="yt-fav-btn ${isFav ? 'yt-fav-active' : ''}" data-id="${videoId}" data-tipo="${tipoBusca}" title="${isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderizarHistorico() {
+        if (historicoBuscas.length === 0) {
+            return '<div class="yt-dark-nada">Nenhuma busca no histórico.</div>';
+        }
+
+        return historicoBuscas.map(busca => {
+            const data = new Date(busca.timestamp);
+            const dataFormatada = data.toLocaleDateString('pt-BR') + ' ' + data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            
+            return `
+                <div class="yt-dark-card yt-historico-item" data-termo="${busca.termo}" data-tipo="${busca.tipo}">
+                    <div class="yt-dark-info">
+                        <div class="yt-dark-title">${busca.termo}</div>
+                        <div class="yt-dark-channel">${busca.tipo === 'video' ? 'Vídeo' : 'Playlist'} • ${dataFormatada}</div>
+                    </div>
+                    <button class="yt-refazer-btn" title="Refazer busca">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderizarFavoritos() {
+        if (favoritos.length === 0) {
+            return '<div class="yt-dark-nada">Nenhum favorito salvo.</div>';
+        }
+
+        return favoritos.map(fav => {
+            return `
+                <div class="yt-dark-card yt-favorito-item" data-id="${fav.id}" data-tipo="${fav.tipo}">
+                    <img class="yt-dark-thumb" src="${fav.thumbnail}" alt="">
+                    <div class="yt-dark-info">
+                        <div class="yt-dark-title">${fav.titulo}</div>
+                        <div class="yt-dark-channel">${fav.canal} • ${fav.tipo === 'video' ? 'Vídeo' : 'Playlist'}</div>
+                    </div>
+                    <button class="yt-remove-fav-btn" data-id="${fav.id}" data-tipo="${fav.tipo}" title="Remover dos favoritos">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                        </svg>
+                    </button>
                 </div>
             `;
         }).join('');
@@ -297,56 +458,157 @@
         // Evento de fechar
         painel.querySelector('#fechar-painel-youtube').onclick = fecharPainel;
 
-        // Evento de input para detectar links
-        inputTermo.addEventListener('input', function() {
-            const valor = this.value.trim();
-            
-            if (valor.includes('youtube.com') || valor.includes('youtu.be')) {
-                const playlistId = extrairIdPlaylist(valor);
-                const videoId = extrairIdVideo(valor);
-                
-                if (playlistId) {
-                    linkIndicator.style.display = 'block';
-                    linkText.textContent = '🔗 Link de Playlist detectado';
-                    linkText.style.color = '#4CAF50';
-                    selectTipo.value = 'playlist';
-                } else if (videoId) {
-                    linkIndicator.style.display = 'block';
-                    linkText.textContent = '🔗 Link de Vídeo detectado';
-                    linkText.style.color = '#2196F3';
-                    selectTipo.value = 'video';
-                } else {
-                    linkIndicator.style.display = 'block';
-                    linkText.textContent = '⚠️ Link do YouTube inválido';
-                    linkText.style.color = '#FF9800';
-                }
-            } else {
-                linkIndicator.style.display = 'none';
-            }
+        // Eventos das abas
+        painel.querySelectorAll('.yt-tab').forEach(tab => {
+            tab.onclick = function() {
+                const aba = this.getAttribute('data-tab');
+                renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, aba);
+            };
         });
 
-        // Evento de submit do formulário
-        painel.querySelector('#yt-form').onsubmit = function(e) {
-            e.preventDefault();
-            const termo = inputTermo.value.trim();
-            const tipo = selectTipo.value;
-            
-            if (!termo) return;
-            
-            processarBusca(termo, tipo, linkText);
-        };
+        // Evento de input para detectar links
+        if (inputTermo) {
+            inputTermo.addEventListener('input', function() {
+                const valor = this.value.trim();
+                
+                if (valor.includes('youtube.com') || valor.includes('youtu.be')) {
+                    const playlistId = extrairIdPlaylist(valor);
+                    const videoId = extrairIdVideo(valor);
+                    
+                    if (playlistId) {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '🔗 Link de Playlist detectado';
+                        linkText.style.color = '#4CAF50';
+                        selectTipo.value = 'playlist';
+                    } else if (videoId) {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '🔗 Link de Vídeo detectado';
+                        linkText.style.color = '#2196F3';
+                        selectTipo.value = 'video';
+                    } else {
+                        linkIndicator.style.display = 'block';
+                        linkText.textContent = '⚠️ Link do YouTube inválido';
+                        linkText.style.color = '#FF9800';
+                    }
+                } else {
+                    linkIndicator.style.display = 'none';
+                }
+            });
+
+            // Evento de submit do formulário
+            painel.querySelector('#yt-form').onsubmit = function(e) {
+                e.preventDefault();
+                const termo = inputTermo.value.trim();
+                const tipo = selectTipo.value;
+                
+                if (!termo) return;
+                
+                processarBusca(termo, tipo, linkText);
+            };
+        }
 
         // Eventos dos cards de resultado
         painel.querySelectorAll('.yt-dark-card').forEach(card => {
-            card.onclick = function() {
+            card.onclick = function(e) {
+                // Não executa se clicou em botões
+                if (e.target.closest('button')) return;
+                
                 const videoId = this.getAttribute('data-videoid');
                 const isVideo = this.getAttribute('data-isvideo') === 'true';
                 
-                if (isVideo) {
-                    reproduzirVideo(videoId);
-                } else {
-                    carregarPlaylist(videoId);
+                if (videoId && isVideo !== null) {
+                    if (isVideo) {
+                        reproduzirVideo(videoId);
+                    } else {
+                        carregarPlaylist(videoId);
+                    }
                 }
+            };
+        });
+
+        // Eventos dos botões de favorito
+        painel.querySelectorAll('.yt-fav-btn').forEach(btn => {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                const id = this.getAttribute('data-id');
+                const tipo = this.getAttribute('data-tipo');
+                
+                if (isFavorito(id, tipo)) {
+                    removerFavorito(id, tipo);
+                } else {
+                    // Encontra o item nos resultados para adicionar
+                    const resultados = ultimosResultados || [];
+                    const item = resultados.find(r => {
+                        const itemId = tipo === 'video' ? r.id.videoId : r.id.playlistId;
+                        return itemId === id;
+                    });
+                    if (item) {
+                        adicionarFavorito(item, tipo);
+                    }
+                }
+                
+                // Re-renderiza para atualizar os botões
+                renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, 'busca');
+            };
+        });
+
+        // Eventos dos itens do histórico
+        painel.querySelectorAll('.yt-historico-item').forEach(item => {
+            item.onclick = function(e) {
+                if (e.target.closest('button')) return;
+                
+                const termo = this.getAttribute('data-termo');
+                const tipo = this.getAttribute('data-tipo');
+                
+                if (termo && tipo) {
+                    processarBusca(termo, tipo, linkText);
+                    renderPainel(termo, tipo, null, null, 'busca');
+                }
+            };
+        });
+
+        // Eventos dos botões refazer busca
+        painel.querySelectorAll('.yt-refazer-btn').forEach(btn => {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                const item = this.closest('.yt-historico-item');
+                const termo = item.getAttribute('data-termo');
+                const tipo = item.getAttribute('data-tipo');
+                
+                if (termo && tipo) {
+                    processarBusca(termo, tipo, linkText);
+                    renderPainel(termo, tipo, null, null, 'busca');
+                }
+            };
+        });
+
+        // Eventos dos favoritos
+        painel.querySelectorAll('.yt-favorito-item').forEach(item => {
+            item.onclick = function(e) {
+                if (e.target.closest('button')) return;
+                
+                const id = this.getAttribute('data-id');
+                const tipo = this.getAttribute('data-tipo');
+                
+                if (id && tipo) {
+                    if (tipo === 'video') {
+                        reproduzirVideo(id);
+                    } else {
+                        carregarPlaylist(id);
+                    }
+                }
+            };
+        });
+
+        // Eventos dos botões remover favorito
+        painel.querySelectorAll('.yt-remove-fav-btn').forEach(btn => {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                const id = this.getAttribute('data-id');
+                const tipo = this.getAttribute('data-tipo');
+                
+                removerFavorito(id, tipo);
+                renderPainel(ultimoTermo, ultimoTipo, ultimosResultados, null, 'favoritos');
             };
         });
     }
@@ -456,6 +718,7 @@
     function buscarYoutube(termo, tipo) {
         ultimoTermo = termo;
         ultimoTipo = tipo;
+        salvarHistorico(termo, tipo);
         renderPainel(termo, tipo);
         mostrarSpinner();
         
@@ -806,6 +1069,92 @@
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
             }
+
+            /* Abas */
+            .yt-dark-tabs {
+                display: flex;
+                background: #202020;
+                border-bottom: 1px solid #333;
+            }
+            .yt-tab {
+                flex: 1;
+                background: none;
+                border: none;
+                color: #aaa;
+                padding: 12px 8px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                font-size: 0.9em;
+                transition: all 0.2s;
+            }
+            .yt-tab:hover {
+                background: #333;
+                color: #fff;
+            }
+            .yt-tab-active {
+                background: #ff0000;
+                color: #fff;
+            }
+            .yt-tab svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            /* Conteúdo das abas */
+            .yt-tab-content {
+                flex: 1;
+                overflow-y: auto;
+            }
+
+            /* Botões de favorito */
+            .yt-fav-btn {
+                background: none;
+                border: none;
+                color: #666;
+                cursor: pointer;
+                padding: 4px;
+                border-radius: 4px;
+                transition: all 0.2s;
+                margin-left: 8px;
+            }
+            .yt-fav-btn:hover {
+                color: #ff0000;
+                background: rgba(255,0,0,0.1);
+            }
+            .yt-fav-active {
+                color: #ff0000 !important;
+            }
+
+            /* Botões de ação */
+            .yt-refazer-btn, .yt-remove-fav-btn {
+                background: none;
+                border: none;
+                color: #666;
+                cursor: pointer;
+                padding: 4px;
+                border-radius: 4px;
+                transition: all 0.2s;
+                margin-left: 8px;
+            }
+            .yt-refazer-btn:hover {
+                color: #2196F3;
+                background: rgba(33,150,243,0.1);
+            }
+            .yt-remove-fav-btn:hover {
+                color: #ff4444;
+                background: rgba(255,68,68,0.1);
+            }
+
+            /* Itens do histórico e favoritos */
+            .yt-historico-item, .yt-favorito-item {
+                cursor: pointer;
+            }
+            .yt-historico-item:hover, .yt-favorito-item:hover {
+                background: #333 !important;
+            }
         `;
         document.head.appendChild(styleDark);
     }
@@ -814,6 +1163,7 @@
     // INICIALIZAÇÃO
     // =================================================================================
     
+    carregarDadosSalvos();
     adicionarCSS();
     setTimeout(adicionarBotaoCustomizado, 3000);
 
