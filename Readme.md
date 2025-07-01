@@ -102,4 +102,4 @@ Este UserScript é fornecido "como está". Você pode usar, modificar e distribu
 
 ---
 
-**Desenvolvido por Felipe Prado** | **Versão atual**: 2.0
+**Desenvolvido por Felipe Prado** | **Versão atual**: 1.0
